@@ -1,0 +1,54 @@
+plugins {
+    id 'fabric-loom' version '1.14-SNAPSHOT'
+}
+
+// ---------------------------------------------------------------------------
+// One shared code base (src/main) + one tiny "Compat" class per range of 1.21.x
+// versions where Minecraft/Fabric API broke compatibility:
+//   1.21   - 1.21.5  : HudRenderCallback, String keybind category
+//   1.21.6 - 1.21.8  : HudElementRegistry, String keybind category
+//   1.21.9 - 1.21.11 : HudElementRegistry, KeyBinding.Category
+// The range is picked automatically from -Pminecraft_version.
+// ---------------------------------------------------------------------------
+def mc = project.minecraft_version.toString()
+if (!mc.startsWith('1.21')) {
+    throw new GradleException("This mod only supports Minecraft 1.21.x (got ${mc})")
+}
+def parts = mc.tokenize('.')
+def patch = parts.size() > 2 ? parts[2].replaceAll('[^0-9].*', '').toInteger() : 0
+
+def compat
+if (patch >= 9)      compat = [id: 'v1219', range: '>=1.21.9 <1.22', label: '1.21.9-1.21.11']
+else if (patch >= 6) compat = [id: 'v1216', range: '>=1.21.6 <1.21.9', label: '1.21.6-1.21.8']
+else                 compat = [id: 'v1215', range: '>=1.21 <1.21.6', label: '1.21-1.21.5']
+
+println "Location Display: building for Minecraft ${mc} using compat set ${compat.id} (${compat.label})"
+
+version = project.mod_version
+base { archivesName = "${project.archives_base_name}-mc${mc}" }
+
+sourceSets.main.java.srcDir "src/compat/${compat.id}/java"
+
+repositories { }
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "minecraft_dep", compat.range
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version, "minecraft_dep": compat.range
+    }
+}
+
+tasks.withType(JavaCompile).configureEach { options.release = 21 }
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+    withSourcesJar()
+}
